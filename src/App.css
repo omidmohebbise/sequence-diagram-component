@@ -1,0 +1,50 @@
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: #f3f4f6;
+  color: #111827;
+}
+
+.App {
+  font-family: sans-serif;
+  text-align: center;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.diagram-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 97%;
+  margin: 0 auto;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 15px 30px rgba(15, 23, 42, 0.12);
+  min-height: 0;
+  box-sizing: border-box;
+}
+
+.diagram-container {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+}
+
+.diagram-container > * {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+

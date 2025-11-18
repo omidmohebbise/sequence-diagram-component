@@ -1,4 +1,4 @@
-import "./styles.css";
+import "./App.css";
 import SequenceDiagram, { SequenceParticipant, SequenceMessage } from "./components/SequenceDiagram";
 
 type AppProps = {

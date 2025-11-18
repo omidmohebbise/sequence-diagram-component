@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
+import styles from "./SequenceDiagram.module.css";
 
 export type SequenceParticipant = {
 	id: string;
@@ -69,6 +70,8 @@ const DEFAULTS = {
 	fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif"
 };
 
+const PARTICIPANT_COLORS = ["#2563eb", "#db2777", "#059669", "#f97316", "#9333ea", "#0ea5e9", "#14b8a6", "#f59e0b"];
+
 function buildLayout(participantCount: number, messageCount: number, cfg: Required<NonNullable<SequenceDiagramProps["config"]>>): Layout {
 	const width =
 		cfg.hMargin * 2 +
@@ -138,6 +141,11 @@ export function SequenceDiagram({
 	const bodyHeight = Math.max(0, layout.height - headerHeight);
 	const bottomMargin = cfg.vMargin / 2;
 
+	const participantColors = useMemo(
+		() => participants.map((_, idx) => PARTICIPANT_COLORS[idx % PARTICIPANT_COLORS.length]),
+		[participants]
+	);
+
 	const lifelineLabelPositions = useMemo(() => {
 		if (bodyHeight <= 0) return [];
 		const spacing = Math.max(120, cfg.messageGapY) * 2;
@@ -177,6 +185,7 @@ export function SequenceDiagram({
 	const renderParticipantBar = () =>
 		participants.map((p, i) => {
 			const cx = layout.participantCenters[i];
+			const accent = participantColors[i];
 			return (
 				<g key={p.id}>
 					<rect
@@ -187,23 +196,24 @@ export function SequenceDiagram({
 						width={cfg.participantWidth}
 						height={cfg.participantHeight}
 						fill="#ffffff"
-						stroke="#1f2937"
-						strokeWidth={1}
+						stroke={accent}
+						strokeWidth={1.5}
 					/>
-											<line
-												x1={cx}
-												y1={cfg.vMargin + cfg.participantHeight}
-												x2={cx}
-												y2={headerHeight}
-												stroke="#9ca3af"
-												strokeDasharray="6 6"
-											/>
+					<line
+						x1={cx}
+						y1={cfg.vMargin + cfg.participantHeight}
+						x2={cx}
+						y2={headerHeight}
+						stroke={accent}
+						strokeDasharray="6 6"
+					/>
 					<text
 						x={cx}
 						y={cfg.vMargin + cfg.participantHeight / 2 + 4}
 						textAnchor="middle"
 						fontSize={13}
-						fill="#111827"
+						fill={accent}
+						fontWeight={600}
 					>
 						{p.name}
 					</text>
@@ -214,10 +224,12 @@ export function SequenceDiagram({
 	// Split rendering: sticky header and scrollable body with shared horizontal scroll.
 	const outerHeightStyle = height != null ? { height } : undefined;
 
+	const rootClassName = [styles.diagramRoot, className].filter(Boolean).join(" ");
+
 	return (
 		<div
 			ref={containerRef}
-			className={className}
+			className={rootClassName}
 			style={{
 				width: "100%",
 				position: "relative",
@@ -230,12 +242,12 @@ export function SequenceDiagram({
 			onClick={closePopup}
 		>
 			<div
-				className="sd-outer-scroll"
+				className={styles.outerScroll}
 				style={{ width: "100%", flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", position: "relative" }}
 			>
-				<div className="sd-hscroll" style={{ width: "100%", overflowX: "auto", minHeight: 0 }}>
+				<div className={styles.hScroll} style={{ width: "100%", overflowX: "auto", minHeight: 0 }}>
 					<div style={{ width: layout.width }}>
-						<div className="sd-header" style={{ position: "sticky", top: 0, zIndex: 10, background: "#ffffff" }}>
+						<div className={styles.header} style={{ position: "sticky", top: 0, zIndex: 10 }}>
 							<svg
 								role="img"
 								viewBox={`0 0 ${layout.width} ${headerHeight}`}
@@ -247,7 +259,7 @@ export function SequenceDiagram({
 								{renderParticipantBar()}
 							</svg>
 						</div>
-						<div className="sd-body" style={{ paddingBottom: Math.max(0, headerHeight - bottomMargin) }}>
+						<div className={styles.body} style={{ paddingBottom: Math.max(0, headerHeight - bottomMargin) }}>
 							<svg
 								role="img"
 								viewBox={`0 0 ${layout.width} ${bodyHeight}`}
@@ -259,6 +271,7 @@ export function SequenceDiagram({
 								<ArrowMarkerDefs />
 								{participants.map((p, i) => {
 									const cx = layout.participantCenters[i];
+									const accent = participantColors[i];
 									return (
 										<line
 											key={`lifeline-${p.id}`}
@@ -266,15 +279,16 @@ export function SequenceDiagram({
 											y1={0}
 											x2={cx}
 											y2={Math.max(0, bodyHeight - bottomMargin)}
-											stroke="#9ca3af"
+											stroke={accent}
 											strokeDasharray="6 6"
 										/>
 									);
 								})}
 								{participants.map((p, i) => {
 									const cx = layout.participantCenters[i];
+									const accent = participantColors[i];
 									return (
-										<g key={`lifeline-label-${p.id}`} style={{ pointerEvents: "none" }} color="#6b7280">
+										<g key={`lifeline-label-${p.id}`} style={{ pointerEvents: "none" }} color={accent}>
 											{lifelineLabelPositions.map((yPos, idx) => (
 												<text
 													key={`label-${idx}`}
@@ -282,8 +296,8 @@ export function SequenceDiagram({
 													y={yPos}
 													textAnchor="middle"
 													fontSize={11}
-													fill="#9ca3af"
-													opacity={0.85}
+													fill={accent}
+													opacity={0.75}
 													dominantBaseline="middle"
 													transform={`rotate(-90 ${cx} ${yPos})`}
 												>
@@ -352,7 +366,7 @@ export function SequenceDiagram({
 										return (
 											<g
 												key={`msg-${i}`}
-												color="#111827"
+												color={participantColors[fromIdx]}
 												onMouseEnter={() => setHoveredMsgIndex(i)}
 												onMouseLeave={() => setHoveredMsgIndex(null)}
 												style={{ cursor: m.label ? "pointer" : "default" }}
@@ -377,7 +391,7 @@ export function SequenceDiagram({
 													x={fromX + loopWidth + 4}
 													y={y + 12}
 													fontSize={12}
-													fill="#111827"
+														fill={participantColors[fromIdx]}
 													style={{ cursor: "pointer" }}
 													onClick={(evt) =>
 														handleLabelClick(evt, {
@@ -402,7 +416,7 @@ export function SequenceDiagram({
 									return (
 										<g
 											key={`msg-${i}`}
-											color="#111827"
+											color={participantColors[fromIdx]}
 											onMouseEnter={() => setHoveredMsgIndex(i)}
 											onMouseLeave={() => setHoveredMsgIndex(null)}
 											style={{ cursor: m.label ? "pointer" : "default" }}
@@ -432,7 +446,7 @@ export function SequenceDiagram({
 													y={y - 6}
 													fontSize={12}
 													textAnchor="middle"
-													fill="#111827"
+													fill={participantColors[fromIdx]}
 													style={{ cursor: "pointer" }}
 													onClick={(evt) =>
 														handleLabelClick(evt, {
@@ -457,7 +471,7 @@ export function SequenceDiagram({
 								})}
 							</svg>
 						</div>
-						<div className="sd-footer" style={{ position: "sticky", bottom: 0, zIndex: 10, background: "#ffffff" }}>
+						<div className={styles.footer} style={{ position: "sticky", bottom: 0, zIndex: 10 }}>
 							<svg
 								role="img"
 								viewBox={`0 0 ${layout.width} ${headerHeight}`}
@@ -469,6 +483,7 @@ export function SequenceDiagram({
 								{renderParticipantBar()}
 								{participants.map((p, i) => {
 									const cx = layout.participantCenters[i];
+									const accent = participantColors[i];
 									return (
 										<line
 											key={`footer-connector-${p.id}`}
@@ -476,7 +491,7 @@ export function SequenceDiagram({
 											y1={0}
 											x2={cx}
 											y2={cfg.vMargin}
-											stroke="#9ca3af"
+											stroke={accent}
 											strokeDasharray="6 6"
 										/>
 									);
@@ -488,7 +503,7 @@ export function SequenceDiagram({
 			</div>
 			{popup ? (
 				<div
-					className="sd-popup"
+					className={styles.popup}
 					style={{
 						top: popup.position.y,
 						left: popup.position.x
@@ -497,20 +512,20 @@ export function SequenceDiagram({
 						evt.stopPropagation();
 					}}
 				>
-					<button className="sd-popup-close" type="button" onClick={closePopup} aria-label="Close">
+					<button className={styles.popupClose} type="button" onClick={closePopup} aria-label="Close">
 						×
 					</button>
-					<div className="sd-popup-title">{popup.title || popup.content?.message || "Untitled label"}</div>
-					<div className="sd-popup-message">{popup.content?.message ?? popup.title ?? "No details provided."}</div>
-					<div className="sd-popup-meta">
+					<div className={styles.popupTitle}>{popup.title || popup.content?.message || "Untitled label"}</div>
+					<div className={styles.popupMessage}>{popup.content?.message ?? popup.title ?? "No details provided."}</div>
+					<div className={styles.popupMeta}>
 						<strong>Participants:</strong> {popup.participants.join(" → ")}
 					</div>
 					{popup.content
 						? Object.entries(popup.content)
 								.filter(([key]) => key !== "message")
 								.map(([key, value]) => (
-									<div key={key} className="sd-popup-extra">
-										<span className="sd-popup-extra-key">{key}:</span> <span>{value}</span>
+									<div key={key} className={styles.popupExtra}>
+										<span className={styles.popupExtraKey}>{key}:</span> <span>{value}</span>
 									</div>
 								))
 						: null}

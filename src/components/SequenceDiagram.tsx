@@ -16,6 +16,8 @@ export type SequenceMessage = {
 	to: string;
 	label?: string;
 	kind?: "sync" | "async" | "return" | "note";
+	/** If true, visually emphasizes the label (e.g., blurred background behind label). */
+	highlightLabel?: boolean;
 	popup?: SequenceMessagePopup;
 };
 
@@ -24,6 +26,10 @@ export type SequenceDiagramProps = {
 	messages: SequenceMessage[];
 	config?: {
 		showLabelsMode?: "always" | "hover";
+		/** Overall color style for the diagram. */
+		colorMode?: "color" | "mono";
+		/** Controls visibility of the participant header labels. */
+		showParticipantLabels?: boolean;
 		hMargin?: number;
 		vMargin?: number;
 		participantWidth?: number;
@@ -38,6 +44,8 @@ export type SequenceDiagramProps = {
 	width?: number | string;
 	/** If provided, sets the outer container height (e.g., 600 or "100%"). Defaults to "auto". */
 	height?: number | string;
+	/** Shows a toolbar with view controls (color mode, labels, participant filter). Defaults to true. */
+	showToolbar?: boolean;
 	className?: string;
 	style?: React.CSSProperties;
 };
@@ -59,6 +67,8 @@ type PopupState = {
 
 const DEFAULTS = {
 	showLabelsMode: "always" as const,
+	colorMode: "color" as const,
+	showParticipantLabels: true,
 	hMargin: 32,
 	vMargin: 32,
 	participantWidth: 140,
@@ -98,6 +108,14 @@ function ArrowMarkerDefs() {
 			<marker id="arrow-open" markerWidth="10" markerHeight="10" refX="10" refY="5" orient="auto-start-reverse">
 				<path d="M 10 5 L 0 0 M 10 5 L 0 10" stroke="currentColor" strokeWidth="1.5" fill="none" />
 			</marker>
+			<filter id="label-blur" x="-40%" y="-40%" width="180%" height="180%">
+				<feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur" />
+				<feColorMatrix
+					in="blur"
+					type="matrix"
+					values="0 0 0 0 0   0 0 0 0 0   0 0 0 0 0   0 0 0 0.35 0"
+				/>
+			</filter>
 		</defs>
 	);
 }
@@ -108,24 +126,30 @@ export function SequenceDiagram({
 	config,
 	width,
 	height,
+	showToolbar = true,
 	className,
 	style
 }: SequenceDiagramProps) {
 	const cfg = { ...DEFAULTS, ...(config ?? {}) };
+	const [colorMode, setColorMode] = useState<"color" | "mono">(cfg.colorMode);
+	const [showParticipantLabels, setShowParticipantLabels] = useState<boolean>(cfg.showParticipantLabels);
+	const [visibleParticipantIds, setVisibleParticipantIds] = useState<string[] | null>(null);
 	const [hoveredMsgIndex, setHoveredMsgIndex] = useState<number | null>(null);
 	const [popup, setPopup] = useState<PopupState | null>(null);
 	const containerRef = useRef<HTMLDivElement>(null);
 
-	const idxById = useMemo(() => {
-		const map = new Map<string, number>();
-		participants.forEach((p, i) => map.set(p.id, i));
-		return map;
-	}, [participants]);
+	const visibleParticipants = useMemo(
+		() =>
+			visibleParticipantIds
+				? participants.filter((p) => visibleParticipantIds.includes(p.id))
+				: participants,
+		[participants, visibleParticipantIds]
+	);
 
 	const layout = useMemo(
-		() => buildLayout(participants.length, messages.length, cfg),
+		() => buildLayout(visibleParticipants.length, messages.length, cfg),
 		[
-			participants.length,
+			visibleParticipants.length,
 			messages.length,
 			cfg.hMargin,
 			cfg.vMargin,
@@ -142,8 +166,11 @@ export function SequenceDiagram({
 	const bottomMargin = cfg.vMargin / 2;
 
 	const participantColors = useMemo(
-		() => participants.map((_, idx) => PARTICIPANT_COLORS[idx % PARTICIPANT_COLORS.length]),
-		[participants]
+		() =>
+			colorMode === "mono"
+				? visibleParticipants.map(() => "#111827")
+				: visibleParticipants.map((_, idx) => PARTICIPANT_COLORS[idx % PARTICIPANT_COLORS.length]),
+		[visibleParticipants, colorMode]
 	);
 
 	const lifelineLabelPositions = useMemo(() => {
@@ -183,17 +210,21 @@ export function SequenceDiagram({
 	const closePopup = useCallback(() => setPopup(null), []);
 
 	const renderParticipantBar = () =>
-		participants.map((p, i) => {
+		visibleParticipants.map((p, i) => {
 			const cx = layout.participantCenters[i];
 			const accent = participantColors[i];
+			// Dynamically size the participant rectangle based on the label length,
+			// with a minimum width from the config.
+			const estimatedLabelWidth = p.name.length * 8 + 24; // rough estimate: 8px per char + padding
+			const rectWidth = Math.max(cfg.participantWidth, estimatedLabelWidth);
 			return (
 				<g key={p.id}>
 					<rect
-						x={cx - cfg.participantWidth / 2}
+						x={cx - rectWidth / 2}
 						y={cfg.vMargin}
 						rx={6}
 						ry={6}
-						width={cfg.participantWidth}
+						width={rectWidth}
 						height={cfg.participantHeight}
 						fill="#ffffff"
 						stroke={accent}
@@ -211,9 +242,9 @@ export function SequenceDiagram({
 						x={cx}
 						y={cfg.vMargin + cfg.participantHeight / 2 + 4}
 						textAnchor="middle"
-						fontSize={13}
-						fill={accent}
-						fontWeight={600}
+						fontSize={12}
+						fill="#000000"
+						fontWeight={500}
 					>
 						{p.name}
 					</text>
@@ -241,6 +272,73 @@ export function SequenceDiagram({
 			}}
 			onClick={closePopup}
 		>
+			{showToolbar ? (
+				<div className={styles.toolbar}>
+					<div className={styles.toolbarLeft}>
+						<span className={styles.toolbarLabel}>View</span>
+						<button
+							type="button"
+							className={`${styles.toolbarButton} ${colorMode === "color" ? styles.toolbarButtonActive : ""}`}
+							onClick={() => setColorMode("color")}
+						>
+							Color
+						</button>
+						<button
+							type="button"
+							className={`${styles.toolbarButton} ${colorMode === "mono" ? styles.toolbarButtonActive : ""}`}
+							onClick={() => setColorMode("mono")}
+						>
+							B&amp;W
+						</button>
+						<label className={styles.toolbarCheckboxItem}>
+							<input
+								type="checkbox"
+								checked={showParticipantLabels}
+								onChange={(e) => setShowParticipantLabels(e.target.checked)}
+							/>
+							<span>Participant labels</span>
+						</label>
+					</div>
+					<div className={styles.toolbarRight}>
+						<span className={styles.toolbarLabel}>Participants</span>
+						<div className={styles.toolbarCheckboxGroup}>
+							{participants.map((p) => {
+								const allSelected = !visibleParticipantIds || visibleParticipantIds.length === 0;
+								const checked = allSelected || visibleParticipantIds?.includes(p.id);
+								return (
+									<label key={p.id} className={styles.toolbarCheckboxItem}>
+										<input
+											type="checkbox"
+											checked={checked}
+											onChange={(e) => {
+												if (e.target.checked) {
+													// add back
+													setVisibleParticipantIds((prev) => {
+														if (!prev) return null; // null means all
+														const set = new Set(prev);
+														set.add(p.id);
+														// if all are selected, collapse back to null
+														const allIds = participants.map((pp) => pp.id);
+														const allSelectedNow = allIds.every((id) => set.has(id));
+														return allSelectedNow ? null : Array.from(set);
+													});
+												} else {
+													setVisibleParticipantIds((prev) => {
+														const current = prev ?? participants.map((pp) => pp.id);
+														const filtered = current.filter((id) => id !== p.id);
+														return filtered.length === participants.length ? null : filtered;
+													});
+												}
+											}}
+										/>
+										<span>{p.name}</span>
+									</label>
+								);
+							})}
+						</div>
+					</div>
+				</div>
+			) : null}
 			<div
 				className={styles.outerScroll}
 				style={{ width: "100%", flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", position: "relative" }}
@@ -269,7 +367,7 @@ export function SequenceDiagram({
 								style={{ display: "block", color: "currentColor", fontFamily: cfg.fontFamily }}
 							>
 								<ArrowMarkerDefs />
-								{participants.map((p, i) => {
+								{visibleParticipants.map((p, i) => {
 									const cx = layout.participantCenters[i];
 									const accent = participantColors[i];
 									return (
@@ -284,7 +382,8 @@ export function SequenceDiagram({
 										/>
 									);
 								})}
-								{participants.map((p, i) => {
+								{showParticipantLabels &&
+									visibleParticipants.map((p, i) => {
 									const cx = layout.participantCenters[i];
 									const accent = participantColors[i];
 									return (
@@ -296,7 +395,7 @@ export function SequenceDiagram({
 													y={yPos}
 													textAnchor="middle"
 													fontSize={11}
-													fill={accent}
+													fill="#000000"
 													opacity={0.75}
 													dominantBaseline="middle"
 													transform={`rotate(-90 ${cx} ${yPos})`}
@@ -309,7 +408,9 @@ export function SequenceDiagram({
 								})}
 								{messages.map((m, i) => {
 									if (m.kind === "note") {
-										const targetIdx = idxById.get(m.to) ?? idxById.get(m.from ?? "");
+										const targetIdx = visibleParticipants.findIndex(
+											(p) => p.id === m.to || p.id === m.from
+										);
 										if (targetIdx == null) return null;
 										const cx = layout.participantCenters[targetIdx];
 										const y = (layout.messageY[i] - headerHeight) + 12;
@@ -337,7 +438,7 @@ export function SequenceDiagram({
 													onClick={(evt) =>
 														handleLabelClick(evt, {
 															title: m.label ?? "",
-															participants: [participants[targetIdx].name],
+															participants: [visibleParticipants[targetIdx].name],
 															content: m.popup
 														})
 													}
@@ -348,9 +449,9 @@ export function SequenceDiagram({
 										);
 									}
 
-									const fromIdx = idxById.get(m.from);
-									const toIdx = idxById.get(m.to);
-									if (fromIdx == null || toIdx == null) return null;
+									const fromIdx = visibleParticipants.findIndex((p) => p.id === m.from);
+									const toIdx = visibleParticipants.findIndex((p) => p.id === m.to);
+									if (fromIdx === -1 || toIdx === -1) return null;
 									const fromX = layout.participantCenters[fromIdx];
 									const toX = layout.participantCenters[toIdx];
 									const y = layout.messageY[i] - headerHeight;
@@ -358,11 +459,15 @@ export function SequenceDiagram({
 									const isAsync = m.kind === "async";
 									const isHovered = hoveredMsgIndex === i;
 									const shouldShowLabel = Boolean(m.label) && (cfg.showLabelsMode === "always" || isHovered);
+									const isHighlighted = !!m.highlightLabel;
 
 									if (fromIdx === toIdx) {
 										const loopWidth = 40;
 										const loopHeight = 24;
 										const path = `M ${fromX} ${y} h ${loopWidth} v ${loopHeight} h ${-loopWidth}`;
+										const labelX = fromX + loopWidth + 4;
+										const labelY = y + 12;
+										const labelWidth = m.label ? m.label.length * 7 + 20 : 0;
 										return (
 											<g
 												key={`msg-${i}`}
@@ -387,22 +492,41 @@ export function SequenceDiagram({
 													markerEnd={isReturn ? "url(#arrow-open)" : "url(#arrow-solid)"}
 												/>
 												{shouldShowLabel ? (
-												<text
-													x={fromX + loopWidth + 4}
-													y={y + 12}
-													fontSize={12}
-														fill={participantColors[fromIdx]}
-													style={{ cursor: "pointer" }}
-													onClick={(evt) =>
-														handleLabelClick(evt, {
-															title: m.label ?? "",
-															participants: [participants[fromIdx].name],
-															content: m.popup
-														})
-													}
-												>
-														{m.label}
-													</text>
+													<g>
+														{m.label ? (
+															<rect
+																x={labelX - labelWidth / 2}
+																y={labelY - 15}
+																rx={8}
+																ry={8}
+																width={labelWidth}
+																height={22}
+																fill="#ffffff"
+																opacity={0.96}
+																stroke={isHighlighted ? participantColors[fromIdx] : "#e5e7eb"}
+																strokeWidth={isHighlighted ? 1.6 : 1}
+																filter={isHighlighted ? "url(#label-blur)" : undefined}
+															/>
+														) : null}
+														<text
+															x={labelX}
+															y={labelY}
+															fontSize={13}
+															textAnchor="middle"
+															fill="#000000"
+															fontWeight={700}
+															style={{ cursor: "pointer" }}
+															onClick={(evt) =>
+															handleLabelClick(evt, {
+																title: m.label ?? "",
+																participants: [visibleParticipants[fromIdx].name],
+																	content: m.popup
+																})
+															}
+														>
+															{m.label}
+														</text>
+													</g>
 												) : null}
 											</g>
 										);
@@ -412,6 +536,7 @@ export function SequenceDiagram({
 									const rightX = Math.max(fromX, toX);
 									const dir = toX >= fromX ? 1 : -1;
 									const labelX = leftX + (rightX - leftX) / 2;
+									const labelWidth = m.label ? m.label.length * 7 + 20 : 0;
 
 									return (
 										<g
@@ -441,28 +566,46 @@ export function SequenceDiagram({
 												markerEnd={isReturn ? "url(#arrow-open)" : "url(#arrow-solid)"}
 											/>
 											{shouldShowLabel ? (
-												<text
-													x={labelX}
-													y={y - 6}
-													fontSize={12}
-													textAnchor="middle"
-													fill={participantColors[fromIdx]}
-													style={{ cursor: "pointer" }}
-													onClick={(evt) =>
-														handleLabelClick(evt, {
-															title: m.label ?? "",
-															participants: [participants[fromIdx].name, participants[toIdx].name],
-															content: m.popup
-														})
-													}
-												>
-													{m.label}
-												</text>
+												<g>
+													{m.label ? (
+														<rect
+															x={labelX - labelWidth / 2}
+															y={y - 6 - 15}
+															rx={8}
+															ry={8}
+															width={labelWidth}
+															height={22}
+															fill="#ffffff"
+															opacity={0.96}
+															stroke={isHighlighted ? participantColors[fromIdx] : "#e5e7eb"}
+															strokeWidth={isHighlighted ? 1.6 : 1}
+															filter={isHighlighted ? "url(#label-blur)" : undefined}
+														/>
+													) : null}
+													<text
+														x={labelX}
+														y={y - 6}
+														fontSize={13}
+														textAnchor="middle"
+														fill="#000000"
+														fontWeight={700}
+														style={{ cursor: "pointer" }}
+														onClick={(evt) =>
+															handleLabelClick(evt, {
+																title: m.label ?? "",
+																participants: [visibleParticipants[fromIdx].name, visibleParticipants[toIdx].name],
+																content: m.popup
+															})
+														}
+													>
+														{m.label}
+													</text>
+												</g>
 											) : null}
 											<circle cx={fromX} cy={y} r={2} fill="currentColor" opacity={0.5} />
 											<circle cx={toX} cy={y} r={2} fill="currentColor" opacity={0.5} />
 											<title>
-												{participants[fromIdx].name} → {participants[toIdx].name}
+												{visibleParticipants[fromIdx].name} → {visibleParticipants[toIdx].name}
 												{m.label ? `: ${m.label}` : ""}
 											</title>
 											<desc>{dir > 0 ? "left to right" : "right to left"}</desc>

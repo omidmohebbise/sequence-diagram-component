@@ -82,6 +82,8 @@ const DEFAULTS = {
 
 const PARTICIPANT_COLORS = ["#2563eb", "#db2777", "#059669", "#f97316", "#9333ea", "#0ea5e9", "#14b8a6", "#f59e0b"];
 
+const STORAGE_KEY = "sequence-diagram:settings";
+
 function buildLayout(participantCount: number, messageCount: number, cfg: Required<NonNullable<SequenceDiagramProps["config"]>>): Layout {
 	const width =
 		cfg.hMargin * 2 +
@@ -131,9 +133,43 @@ export function SequenceDiagram({
 	style
 }: SequenceDiagramProps) {
 	const cfg = { ...DEFAULTS, ...(config ?? {}) };
-	const [colorMode, setColorMode] = useState<"color" | "mono">(cfg.colorMode);
-	const [showParticipantLabels, setShowParticipantLabels] = useState<boolean>(cfg.showParticipantLabels);
-	const [visibleParticipantIds, setVisibleParticipantIds] = useState<string[] | null>(null);
+	const [colorMode, setColorMode] = useState<"color" | "mono">(() => {
+		if (typeof window === "undefined") return cfg.colorMode;
+		try {
+			const raw = window.localStorage.getItem(STORAGE_KEY);
+			if (!raw) return cfg.colorMode;
+			const parsed = JSON.parse(raw) as { colorMode?: "color" | "mono" };
+			return parsed.colorMode ?? cfg.colorMode;
+		} catch {
+			return cfg.colorMode;
+		}
+	});
+	const [showParticipantLabels, setShowParticipantLabels] = useState<boolean>(() => {
+		if (typeof window === "undefined") return cfg.showParticipantLabels;
+		try {
+			const raw = window.localStorage.getItem(STORAGE_KEY);
+			if (!raw) return cfg.showParticipantLabels;
+			const parsed = JSON.parse(raw) as { showParticipantLabels?: boolean };
+			return parsed.showParticipantLabels ?? cfg.showParticipantLabels;
+		} catch {
+			return cfg.showParticipantLabels;
+		}
+	});
+	const [visibleParticipantIds, setVisibleParticipantIds] = useState<string[] | null>(() => {
+		if (typeof window === "undefined") return null;
+		try {
+			const raw = window.localStorage.getItem(STORAGE_KEY);
+			if (!raw) return null;
+			const parsed = JSON.parse(raw) as { visibleParticipantIds?: string[] | null };
+			if (!parsed.visibleParticipantIds) return null;
+			// Filter out any ids that no longer exist.
+			const validIds = parsed.visibleParticipantIds.filter((id) => participants.some((p) => p.id === id));
+			return validIds.length ? validIds : null;
+		} catch {
+			return null;
+		}
+	});
+	const [isFilterOpen, setIsFilterOpen] = useState(false);
 	const [hoveredMsgIndex, setHoveredMsgIndex] = useState<number | null>(null);
 	const [popup, setPopup] = useState<PopupState | null>(null);
 	const containerRef = useRef<HTMLDivElement>(null);
@@ -185,6 +221,21 @@ export function SequenceDiagram({
 		}
 		return positions;
 	}, [bodyHeight, cfg.messageGapY]);
+
+	// Persist toolbar settings and visible participants.
+	React.useEffect(() => {
+		if (typeof window === "undefined") return;
+		const payload = {
+			colorMode,
+			showParticipantLabels,
+			visibleParticipantIds
+		};
+		try {
+			window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+		} catch {
+			// Ignore storage errors (e.g., quota, disabled storage).
+		}
+	}, [colorMode, showParticipantLabels, visibleParticipantIds]);
 
 	const handleLabelClick = useCallback(
 		(
@@ -301,40 +352,94 @@ export function SequenceDiagram({
 					</div>
 					<div className={styles.toolbarRight}>
 						<span className={styles.toolbarLabel}>Participants</span>
-						<div className={styles.toolbarCheckboxGroup}>
-							{participants.map((p) => {
-								const allSelected = !visibleParticipantIds || visibleParticipantIds.length === 0;
-								const checked = allSelected || visibleParticipantIds?.includes(p.id);
+						<div className={styles.toolbarDropdown}>
+							{(() => {
+								const total = participants.length;
+								const currentIds =
+									visibleParticipantIds ?? participants.map((p) => p.id);
+								const selectedCount = currentIds.length;
+								let label = "All participants";
+								if (selectedCount === 0) {
+									label = "No participants";
+								} else if (selectedCount !== total) {
+									label = `Filtered (${selectedCount}/${total})`;
+								}
 								return (
-									<label key={p.id} className={styles.toolbarCheckboxItem}>
-										<input
-											type="checkbox"
-											checked={checked}
-											onChange={(e) => {
-												if (e.target.checked) {
-													// add back
-													setVisibleParticipantIds((prev) => {
-														if (!prev) return null; // null means all
-														const set = new Set(prev);
-														set.add(p.id);
-														// if all are selected, collapse back to null
-														const allIds = participants.map((pp) => pp.id);
-														const allSelectedNow = allIds.every((id) => set.has(id));
-														return allSelectedNow ? null : Array.from(set);
-													});
-												} else {
-													setVisibleParticipantIds((prev) => {
-														const current = prev ?? participants.map((pp) => pp.id);
-														const filtered = current.filter((id) => id !== p.id);
-														return filtered.length === participants.length ? null : filtered;
-													});
-												}
-											}}
-										/>
-										<span>{p.name}</span>
-									</label>
+									<button
+										type="button"
+										className={styles.toolbarDropdownButton}
+										onClick={(e) => {
+											e.stopPropagation();
+											setIsFilterOpen((open) => !open);
+										}}
+									>
+										<span>{label}</span>
+										<span>▾</span>
+									</button>
 								);
-							})}
+							})()}
+							{isFilterOpen ? (
+								<div
+									className={styles.toolbarDropdownMenu}
+									onClick={(e) => e.stopPropagation()}
+								>
+									<div className={styles.toolbarDropdownHeader}>
+										<span className={styles.toolbarLabel}>Participants</span>
+										<div className={styles.toolbarDropdownActions}>
+											<button
+												type="button"
+												className={styles.toolbarSmallButton}
+												onClick={() => setVisibleParticipantIds(null)}
+											>
+												Select all
+											</button>
+											<button
+												type="button"
+												className={styles.toolbarSmallButton}
+												onClick={() => setVisibleParticipantIds([])}
+											>
+												Unselect all
+											</button>
+										</div>
+									</div>
+									<div className={styles.toolbarCheckboxGroup}>
+										{participants.map((p) => {
+											const allSelected = !visibleParticipantIds;
+											const checked = allSelected || visibleParticipantIds.includes(p.id);
+											return (
+												<label key={p.id} className={styles.toolbarCheckboxItem}>
+													<input
+														type="checkbox"
+														checked={checked}
+														onChange={(e) => {
+															if (e.target.checked) {
+																setVisibleParticipantIds((prev) => {
+																	if (!prev) {
+																		// all were selected; keep all selected
+																		return null;
+																	}
+																	const set = new Set(prev);
+																	set.add(p.id);
+																	const allIds = participants.map((pp) => pp.id);
+																	const allSelectedNow = allIds.every((id) => set.has(id));
+																	return allSelectedNow ? null : Array.from(set);
+																});
+															} else {
+																setVisibleParticipantIds((prev) => {
+																	const current = prev ?? participants.map((pp) => pp.id);
+																	const filtered = current.filter((id) => id !== p.id);
+																	return filtered;
+																});
+															}
+														}}
+													/>
+													<span>{p.name}</span>
+												</label>
+											);
+										})}
+									</div>
+								</div>
+							) : null}
 						</div>
 					</div>
 				</div>

@@ -17,7 +17,7 @@ const defaultParticipants: SequenceParticipant[] = [
 	{ id: "db", name: "Database" }
 ];
 
-const defaultMessages: SequenceMessage[] = [
+const defaultMessages: SequenceMessage[] = ([
 	{
 		from: "user",
 		to: "browser",
@@ -326,7 +326,12 @@ const defaultMessages: SequenceMessage[] = [
 		kind: "return",
 		popup: { message: "Health check successful", status: "200" }
 	}
-];
+] as const).map(
+	(m, index): SequenceMessage => ({
+		...m,
+		timestamp: index + 1
+	})
+);
 
 export default function App({ participants = defaultParticipants, messages = defaultMessages }: AppProps) {
 	return (

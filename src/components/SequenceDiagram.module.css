@@ -20,6 +20,42 @@
   flex-wrap: wrap;
 }
 
+.toolbarTime {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.timeRangeLabel {
+  font-size: 11px;
+  color: #4b5563;
+}
+
+.timeRangeInputs {
+  display: flex;
+  align-items: center;
+  position: relative;
+  width: 180px;
+  height: 18px;
+}
+
+.timeRangeInputs input[type="range"] {
+  position: absolute;
+  left: 0;
+  right: 0;
+  width: 100%;
+  pointer-events: none; /* allow thumbs to be dragged independently */
+}
+
+.timeRangeInputs input[type="range"]::-webkit-slider-thumb {
+  pointer-events: auto;
+}
+
+.timeRangeInputs input[type="range"]::-moz-range-thumb {
+  pointer-events: auto;
+}
+
 .toolbarDropdown {
   position: relative;
 }

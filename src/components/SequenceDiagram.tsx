@@ -16,6 +16,8 @@ export type SequenceMessage = {
 	to: string;
 	label?: string;
 	kind?: "sync" | "async" | "return" | "note";
+	/** Optional timestamp (number). Used for time-window filtering in the toolbar. */
+	timestamp?: number;
 	/** If true, visually emphasizes the label (e.g., blurred background behind label). */
 	highlightLabel?: boolean;
 	popup?: SequenceMessagePopup;
@@ -169,10 +171,59 @@ export function SequenceDiagram({
 			return null;
 		}
 	});
+	const [timeRange, setTimeRange] = useState<{ min: number; max: number } | null>(() => {
+		if (typeof window === "undefined") return null;
+		try {
+			const raw = window.localStorage.getItem(STORAGE_KEY);
+			if (!raw) return null;
+			const parsed = JSON.parse(raw) as { timeRange?: { min: number; max: number } | null };
+			return parsed.timeRange ?? null;
+		} catch {
+			return null;
+		}
+	});
 	const [isFilterOpen, setIsFilterOpen] = useState(false);
 	const [hoveredMsgIndex, setHoveredMsgIndex] = useState<number | null>(null);
 	const [popup, setPopup] = useState<PopupState | null>(null);
 	const containerRef = useRef<HTMLDivElement>(null);
+
+	const timeStats = useMemo(() => {
+		let min = Infinity;
+		let max = -Infinity;
+		let count = 0;
+		for (const m of messages) {
+			if (typeof m.timestamp === "number" && !Number.isNaN(m.timestamp)) {
+				if (m.timestamp < min) min = m.timestamp;
+				if (m.timestamp > max) max = m.timestamp;
+				count++;
+			}
+		}
+		if (count === 0) {
+			return { hasAny: false as const, min: 0, max: 0 };
+		}
+		return { hasAny: true as const, min, max };
+	}, [messages]);
+
+	const activeTimeRange = useMemo(() => {
+		if (!timeStats.hasAny) return null;
+		if (!timeRange) return { min: timeStats.min, max: timeStats.max };
+		return {
+			min: Math.max(timeStats.min, timeRange.min),
+			max: Math.min(timeStats.max, timeRange.max)
+		};
+	}, [timeStats, timeRange]);
+
+	const filteredMessages = useMemo(() => {
+		if (!activeTimeRange) return messages;
+		const { min, max } = activeTimeRange;
+		return messages.filter((m) => {
+			if (typeof m.timestamp !== "number" || Number.isNaN(m.timestamp)) {
+				// Messages without timestamp are always shown.
+				return true;
+			}
+			return m.timestamp >= min && m.timestamp <= max;
+		});
+	}, [messages, activeTimeRange]);
 
 	const visibleParticipants = useMemo(
 		() =>
@@ -183,10 +234,10 @@ export function SequenceDiagram({
 	);
 
 	const layout = useMemo(
-		() => buildLayout(visibleParticipants.length, messages.length, cfg),
+		() => buildLayout(visibleParticipants.length, filteredMessages.length, cfg),
 		[
 			visibleParticipants.length,
-			messages.length,
+			filteredMessages.length,
 			cfg.hMargin,
 			cfg.vMargin,
 			cfg.participantWidth,
@@ -222,20 +273,21 @@ export function SequenceDiagram({
 		return positions;
 	}, [bodyHeight, cfg.messageGapY]);
 
-	// Persist toolbar settings and visible participants.
+	// Persist toolbar settings, visible participants and time filter.
 	React.useEffect(() => {
 		if (typeof window === "undefined") return;
 		const payload = {
 			colorMode,
 			showParticipantLabels,
-			visibleParticipantIds
+			visibleParticipantIds,
+			timeRange: activeTimeRange
 		};
 		try {
 			window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
 		} catch {
 			// Ignore storage errors (e.g., quota, disabled storage).
 		}
-	}, [colorMode, showParticipantLabels, visibleParticipantIds]);
+	}, [colorMode, showParticipantLabels, visibleParticipantIds, activeTimeRange]);
 
 	const handleLabelClick = useCallback(
 		(
@@ -350,6 +402,48 @@ export function SequenceDiagram({
 							<span>Participant labels</span>
 						</label>
 					</div>
+					{timeStats.hasAny ? (
+						<div className={styles.toolbarTime}>
+							<span className={styles.toolbarLabel}>Time</span>
+							<span className={styles.timeRangeLabel}>
+								{activeTimeRange
+									? `${Math.round(activeTimeRange.min)} – ${Math.round(activeTimeRange.max)}`
+									: `${Math.round(timeStats.min)} – ${Math.round(timeStats.max)}`}
+							</span>
+							<div className={styles.timeRangeInputs}>
+								<input
+									type="range"
+									min={timeStats.min}
+									max={timeStats.max}
+									step={1}
+									value={activeTimeRange ? activeTimeRange.min : timeStats.min}
+									onChange={(e) => {
+										const newMin = Number(e.target.value);
+										setTimeRange((prev) => {
+											const current = prev ?? { min: timeStats.min, max: timeStats.max };
+											const clampedMin = Math.min(newMin, current.max);
+											return { min: clampedMin, max: current.max };
+										});
+									}}
+								/>
+								<input
+									type="range"
+									min={timeStats.min}
+									max={timeStats.max}
+									step={1}
+									value={activeTimeRange ? activeTimeRange.max : timeStats.max}
+									onChange={(e) => {
+										const newMax = Number(e.target.value);
+										setTimeRange((prev) => {
+											const current = prev ?? { min: timeStats.min, max: timeStats.max };
+											const clampedMax = Math.max(newMax, current.min);
+											return { min: current.min, max: clampedMax };
+										});
+									}}
+								/>
+							</div>
+						</div>
+					) : null}
 					<div className={styles.toolbarRight}>
 						<span className={styles.toolbarLabel}>Participants</span>
 						<div className={styles.toolbarDropdown}>
@@ -511,7 +605,7 @@ export function SequenceDiagram({
 										</g>
 									);
 								})}
-								{messages.map((m, i) => {
+								{filteredMessages.map((m, i) => {
 									if (m.kind === "note") {
 										const targetIdx = visibleParticipants.findIndex(
 											(p) => p.id === m.to || p.id === m.from

@@ -274,6 +274,18 @@ export function SequenceDiagram({
 		]
 	);
 
+	// Sorted list for the participant filter dropdown: any participant with
+	// "client" in the name (case-insensitive) goes first, then the rest
+	// are sorted alphabetically by name.
+	const sortedParticipantsForFilter = useMemo(() => {
+		if (!participants) return [] as typeof participants;
+		const arr = participants.slice();
+		const clientItems = arr.filter((p) => /client/i.test(p.name));
+		const others = arr.filter((p) => !/client/i.test(p.name));
+		others.sort((a, b) => a.name.localeCompare(b.name));
+		return [...clientItems, ...others];
+	}, [participants]);
+
 	const headerHeight = layout.topBandHeight;
 	const bodyHeight = Math.max(0, layout.height - headerHeight);
 	const bottomMargin = cfg.vMargin / 2;
@@ -532,7 +544,7 @@ export function SequenceDiagram({
 										</div>
 									</div>
 									<div className={styles.toolbarCheckboxGroup}>
-										{participants.map((p) => {
+										{sortedParticipantsForFilter.map((p) => {
 											const allSelected = !visibleParticipantIds;
 											const checked = allSelected || visibleParticipantIds.includes(p.id);
 											return (

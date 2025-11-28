@@ -98,17 +98,30 @@ const PARTICIPANT_COLORS = ["#2563eb", "#db2777", "#059669", "#f97316", "#9333ea
 
 const STORAGE_KEY = "sequence-diagram:settings";
 
-function buildLayout(participantCount: number, messageCount: number, cfg: Required<NonNullable<SequenceDiagramProps["config"]>>): Layout {
-	const width =
-		cfg.hMargin * 2 +
-		Math.max(0, participantCount - 1) * cfg.lifelineGapX +
-		cfg.participantWidth;
+function buildLayout(participantCount: number, messageCount: number, cfg: Required<NonNullable<SequenceDiagramProps["config"]>>, participantNames?: string[]): Layout {
+	// Calculate dynamic participant widths based on name length
+	const participantWidths = participantNames
+		? participantNames.map(name => Math.max(cfg.participantWidth, name.length * 8 + 24))
+		: new Array(participantCount).fill(cfg.participantWidth);
+	
+	// Calculate total width needed for all participants with proper spacing
+	const totalParticipantWidth = participantWidths.reduce((sum, w) => sum + w, 0);
+	const spacingBetweenParticipants = Math.max(0, participantCount - 1) * 60; // minimum 60px between participant centers
+	const width = cfg.hMargin * 2 + totalParticipantWidth + spacingBetweenParticipants;
+	
+	// Calculate participant centers accounting for dynamic widths
+	const participantCenters: number[] = [];
+	let currentX = cfg.hMargin + participantWidths[0] / 2;
+	participantCenters.push(currentX);
+	
+	for (let i = 1; i < participantCount; i++) {
+		currentX += participantWidths[i - 1] / 2 + participantWidths[i] / 2 + 60; // 60px spacing between centers
+		participantCenters.push(currentX);
+	}
+	
 	const topBandHeight = cfg.vMargin + cfg.participantHeight;
 	const bottomMargin = cfg.vMargin / 2;
 	const height = topBandHeight + cfg.firstMessageOffset + bottomMargin + Math.max(0, messageCount) * cfg.messageGapY;
-	const participantCenters = new Array(participantCount)
-		.fill(0)
-		.map((_, i) => cfg.hMargin + cfg.participantWidth / 2 + i * cfg.lifelineGapX);
 	const messageY = new Array(messageCount)
 		.fill(0)
 		.map((_, i) => topBandHeight + cfg.firstMessageOffset + i * cfg.messageGapY);
@@ -246,7 +259,7 @@ export function SequenceDiagram({
 	);
 
 	const layout = useMemo(
-		() => buildLayout(visibleParticipants.length, filteredMessages.length, cfg),
+		() => buildLayout(visibleParticipants.length, filteredMessages.length, cfg, visibleParticipants.map(p => p.name)),
 		[
 			visibleParticipants.length,
 			filteredMessages.length,
@@ -256,7 +269,8 @@ export function SequenceDiagram({
 			cfg.participantHeight,
 			cfg.lifelineGapX,
 			cfg.messageGapY,
-			cfg.firstMessageOffset
+			cfg.firstMessageOffset,
+			visibleParticipants
 		]
 	);
 

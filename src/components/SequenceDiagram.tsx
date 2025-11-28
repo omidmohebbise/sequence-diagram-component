@@ -188,14 +188,21 @@ export function SequenceDiagram({
 			const raw = window.localStorage.getItem(STORAGE_KEY);
 			if (!raw) return null;
 			const parsed = JSON.parse(raw) as { visibleParticipantIds?: string[] | null };
-			if (!parsed.visibleParticipantIds) return null;
-			// Filter out any ids that no longer exist.
-			const validIds = parsed.visibleParticipantIds.filter((id) => participants.some((p) => p.id === id));
-			return validIds.length ? validIds : null;
+			return parsed.visibleParticipantIds ?? null;
 		} catch {
 			return null;
 		}
 	});
+
+	// Sync stored participant IDs with current participants list (validate & filter out removed participants)
+	React.useEffect(() => {
+		if (!visibleParticipantIds) return;
+		const validIds = visibleParticipantIds.filter((id) => participants.some((p) => p.id === id));
+		if (validIds.length !== visibleParticipantIds.length) {
+			// Some IDs are no longer valid; update the state
+			setVisibleParticipantIds(validIds.length ? validIds : null);
+		}
+	}, [participants, visibleParticipantIds]);
 	const [timeRange, setTimeRange] = useState<{ min: number; max: number } | null>(() => {
 		if (typeof window === "undefined") return null;
 		try {

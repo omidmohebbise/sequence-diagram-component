@@ -11,6 +11,13 @@ export type SequenceMessagePopup = {
 	[key: string]: string;
 };
 
+export type SequenceMessageEvent = {
+	id: string;
+	label?: string;
+	/** Arbitrary payload that will be shown as formatted JSON in the popup. */
+	payload: unknown;
+};
+
 export type SequenceMessage = {
 	from: string;
 	to: string;
@@ -21,6 +28,8 @@ export type SequenceMessage = {
 	/** If true, visually emphasizes the label (e.g., blurred background behind label). */
 	highlightLabel?: boolean;
 	popup?: SequenceMessagePopup;
+	/** Optional structured events shown as an accordion inside the popup. */
+	events?: SequenceMessageEvent[];
 };
 
 export type SequenceDiagramProps = {
@@ -65,6 +74,9 @@ type PopupState = {
 	participants: string[];
 	content?: SequenceMessagePopup;
 	position: { x: number; y: number };
+	events?: SequenceMessageEvent[];
+	expandedEventId?: string | null;
+	rawMessage?: SequenceMessage;
 };
 
 const DEFAULTS = {
@@ -292,7 +304,13 @@ export function SequenceDiagram({
 	const handleLabelClick = useCallback(
 		(
 			evt: React.MouseEvent<SVGTextElement, MouseEvent>,
-			payload: { title: string; participants: string[]; content?: SequenceMessagePopup }
+			payload: {
+				title: string;
+				participants: string[];
+				content?: SequenceMessagePopup;
+				events?: SequenceMessageEvent[];
+				rawMessage?: SequenceMessage;
+			}
 		) => {
 			evt.stopPropagation();
 			if (!containerRef.current) return;
@@ -301,6 +319,9 @@ export function SequenceDiagram({
 				title: payload.title,
 				content: payload.content,
 				participants: payload.participants,
+				events: payload.events,
+				rawMessage: payload.rawMessage,
+				expandedEventId: null,
 				position: {
 					x: evt.clientX - rect.left,
 					y: evt.clientY - rect.top
@@ -638,7 +659,9 @@ export function SequenceDiagram({
 														handleLabelClick(evt, {
 															title: m.label ?? "",
 															participants: [visibleParticipants[targetIdx].name],
-															content: m.popup
+															content: m.popup,
+															events: m.events,
+															rawMessage: m
 														})
 													}
 												>
@@ -718,8 +741,10 @@ export function SequenceDiagram({
 															onClick={(evt) =>
 															handleLabelClick(evt, {
 																title: m.label ?? "",
-																participants: [visibleParticipants[fromIdx].name],
-																	content: m.popup
+																	participants: [visibleParticipants[fromIdx].name],
+																	content: m.popup,
+																	events: m.events,
+																	rawMessage: m
 																})
 															}
 														>
@@ -793,7 +818,9 @@ export function SequenceDiagram({
 															handleLabelClick(evt, {
 																title: m.label ?? "",
 																participants: [visibleParticipants[fromIdx].name, visibleParticipants[toIdx].name],
-																content: m.popup
+																content: m.popup,
+																events: m.events,
+																rawMessage: m
 															})
 														}
 													>
@@ -871,6 +898,60 @@ export function SequenceDiagram({
 									</div>
 								))
 						: null}
+					{(() => {
+						const effectiveEvents: SequenceMessageEvent[] =
+							popup.events && popup.events.length > 0
+								? popup.events
+								: popup.rawMessage
+								? [
+										{
+											id: "full-message",
+											label: "Full message payload",
+											payload: popup.rawMessage
+										}
+								  ]
+								: [];
+
+						if (effectiveEvents.length === 0) return null;
+						return (
+						<div className={styles.popupEvents}>
+							<div className={styles.popupEventsTitle}>Events</div>
+							{effectiveEvents.map((ev) => {
+								const isOpen = popup.expandedEventId === ev.id;
+								return (
+									<div key={ev.id} className={styles.popupEventItem}>
+										<div className={styles.popupEventHeader}>
+											<div className={styles.popupEventLabel}>{ev.label ?? ev.id}</div>
+											<button
+												type="button"
+												className={styles.popupEventToggle}
+												onClick={() =>
+													setPopup((prev) =>
+														prev
+															? {
+																	...prev,
+																	expandedEventId: prev.expandedEventId === ev.id ? null : ev.id
+															  }
+															: prev
+													)
+												}
+											>
+												{isOpen ? "Hide JSON" : "View JSON"}
+											</button>
+										</div>
+										{isOpen ? (
+											<div className={styles.popupEventBody}>
+												<pre className={styles.popupEventJson}>
+													{JSON.stringify(ev.payload, null, 2)}
+												</pre>
+											</div>
+										) : null}
+									</div>
+								);
+							})}
+						</div>
+						);
+					})()}
 				</div>
 			) : null}
 		</div>

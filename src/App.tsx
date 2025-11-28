@@ -23,21 +23,68 @@ const defaultMessages: SequenceMessage[] = ([
 		to: "browser",
 		label: "Open /login",
 		kind: "async",
-		popup: { message: "User navigates to the login page", action: "Navigate", id: "req-001" }
+		popup: { message: "User navigates to the login page", action: "Navigate", id: "req-001" },
+		events: [
+			{
+				id: "evt-open-login",
+				label: "Navigation event",
+				payload: {
+					type: "NAVIGATE",
+					url: "/login",
+					source: "user-click"
+				}
+			}
+		] as any
 	},
 	{
 		from: "browser",
 		to: "server",
 		label: "POST /login",
 		kind: "sync",
-		popup: { message: "Browser sends login credentials", method: "POST", endpoint: "/login" }
+		popup: { message: "Browser sends login credentials", method: "POST", endpoint: "/login" },
+		events: [
+			{
+				id: "evt-login-request",
+				label: "HTTP request",
+				payload: {
+					method: "POST",
+					url: "/login",
+					headers: {
+						"content-type": "application/json"
+					},
+					body: {
+						email: "user@example.com",
+						redactedPassword: "********"
+					}
+				}
+			},
+			{
+				id: "evt-login-context",
+				label: "Tracing context",
+				payload: {
+					traceId: "trace-1234",
+					spanId: "span-5678"
+				}
+			}
+		] as any
 	},
 	{
 		from: "server",
 		to: "db",
 		label: "SELECT user",
 		kind: "sync",
-		popup: { message: "Fetch user by email", query: "SELECT ... FROM users WHERE email=?" }
+		popup: { message: "Fetch user by email", query: "SELECT ... FROM users WHERE email=?" },
+		events: [
+			{
+				id: "evt-db-query",
+				label: "DB query",
+				payload: {
+					sql: "SELECT id, email, password_hash FROM users WHERE email = ?",
+					params: ["user@example.com"],
+					durationMs: 12.4
+				}
+			}
+		] as any
 	},
 	{
 		from: "db",
